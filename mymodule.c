@@ -84,21 +84,21 @@ static void protect_memory(void)
     write_cr0_forced(read_cr0() | 0x00010000);
 }
 #elif __aarch64__
-/* Unset the PTE write protect bit */
+/* Unsets the PTE write protect bit */
 static void unprotect_memory(void)
 {
     *__sys_call_table_pte = pte_mkwrite(pte_mkdirty(*__sys_call_table_pte), NULL);
     *__sys_call_table_pte = clear_pte_bit(*__sys_call_table_pte, __pgprot((_AT(pteval_t, 1) << 7)));
 }
 
-/* Set the PTE write protect bit */
+/* Sets the PTE write protect bit */
 static void protect_memory(void)
 {
     pte_wrprotect(*__sys_call_table_pte);
 }
 
 /*
- * Obtain a page from virtual memory.
+ * Obtains a page from virtual memory.
  *
  * @param addr memory address
  * @return pointer to page table entry (PTE)
@@ -110,6 +110,11 @@ static pte_t *page_from_virt(unsigned long addr) {
     pte_t *ptep;
 
     struct mm_struct *init_mm_ptr = (struct mm_struct *)kallsyms_lookup_name_p("init_mm");
+    if (!init_mm_ptr) {
+        pr_info("kallsyms_lookup_name could not find init_mm\n");
+        return NULL;
+    }
+
     pgd = pgd_offset(init_mm_ptr, addr);
     if (pgd_none(*pgd) || pgd_bad(*pgd)) {
         return NULL;
@@ -217,18 +222,17 @@ static int __init module_start(void)
     /* Retrieves the memory address of the system call table */
     kallsyms_lookup_name_p = (kallsyms_lookup_name_p_t)kp_kallsyms_func.addr;
     __sys_call_table = (unsigned long *)kallsyms_lookup_name_p("sys_call_table");
-
-    /* Frees up any resources used when registering the kprobe */
-    unregister_kprobe(&kp_kallsyms_func);
-
     if (!__sys_call_table) {
         pr_info("kallsyms_lookup_name could not find sys_call_table");
         return -ENOENT;
     }
 
 #ifdef __aarch64__
-    /* TODO: weird aarch64 issue with pointer dereferencing not working */
-    __sys_call_table_pte = page_from_virt(*__sys_call_table);
+    __sys_call_table_pte = page_from_virt((unsigned long)__sys_call_table);
+    if (!__sys_call_table_pte) {
+        pr_info("page_from_virt could not obtain system call table pte\n");
+        return -ENOENT;
+    }
 #endif
 
     overwrite_sys_call_table();
@@ -241,6 +245,9 @@ static int __init module_start(void)
 static void __exit module_end(void)
 {
     restore_sys_call_table();
+
+    /* Frees up any resources used when registering the kprobe */
+    unregister_kprobe(&kp_kallsyms_func);
 
     pr_info("Module unloaded.\n");
 }
