@@ -6,7 +6,6 @@
 #include <asm/ptrace.h>
 #include <linux/unistd.h>
 #include <linux/list.h>
-#include <linux/errno.h>
 
 #ifdef __x86_64__
 #include <asm/paravirt.h>
@@ -76,12 +75,14 @@ static inline void write_cr0_forced(unsigned long val)
 static void unprotect_memory(void)
 {
     write_cr0_forced(read_cr0() & ~0x00010000);
+    pr_info("Unprotected memory\n");
 }
 
 /* Sets the write protection bit (bit 16) of the CR0 register */
 static void protect_memory(void)
 {
     write_cr0_forced(read_cr0() | 0x00010000);
+    pr_info("Protected memory\n");
 }
 #elif __aarch64__
 /* Unsets the PTE write protect bit */
@@ -89,16 +90,18 @@ static void unprotect_memory(void)
 {
     *__sys_call_table_pte = pte_mkwrite(pte_mkdirty(*__sys_call_table_pte), NULL);
     *__sys_call_table_pte = clear_pte_bit(*__sys_call_table_pte, __pgprot((_AT(pteval_t, 1) << 7)));
+    pr_info("Unprotected memory\n");
 }
 
 /* Sets the PTE write protect bit */
 static void protect_memory(void)
 {
     pte_wrprotect(*__sys_call_table_pte);
+    pr_info("Protected memory\n");
 }
 
 /*
- * Obtains a page from virtual memory.
+ * Obtains a PTE from virtual memory (for ARM processors).
  *
  * @param addr memory address
  * @return pointer to page table entry (PTE)
@@ -111,7 +114,7 @@ static pte_t *page_from_virt(unsigned long addr) {
 
     struct mm_struct *init_mm_ptr = (struct mm_struct *)kallsyms_lookup_name_p("init_mm");
     if (!init_mm_ptr) {
-        pr_info("kallsyms_lookup_name could not find init_mm\n");
+        pr_info("kallsyms_lookup_name could not find symbol init_mm\n");
         return NULL;
     }
 
@@ -223,15 +226,15 @@ static int __init module_start(void)
     kallsyms_lookup_name_p = (kallsyms_lookup_name_p_t)kp_kallsyms_func.addr;
     __sys_call_table = (unsigned long *)kallsyms_lookup_name_p("sys_call_table");
     if (!__sys_call_table) {
-        pr_info("kallsyms_lookup_name could not find sys_call_table");
-        return -ENOENT;
+        pr_info("kallsyms_lookup_name could not find symbol sys_call_table");
+        return 1;
     }
 
 #ifdef __aarch64__
     __sys_call_table_pte = page_from_virt((unsigned long)__sys_call_table);
     if (!__sys_call_table_pte) {
-        pr_info("page_from_virt could not obtain system call table pte\n");
-        return -ENOENT;
+        pr_info("page_from_virt could not obtain system call table PTE\n");
+        return 1;
     }
 #endif
 
