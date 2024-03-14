@@ -10,4 +10,4 @@ To hide this module once it's inserted, run `kill -63 1` (this module hooks the 
 
 Run `kill -63 1` to unhide this module, and `sudo rmmod mymodule` to remove it.
 
-Tested with Linux 6.7.9 on x86-64.
+Tested with Linux 6.7.9 on x86-64. Support for aarch64 is in progress.

