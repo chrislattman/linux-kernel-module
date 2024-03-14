@@ -1,5 +1,7 @@
 # Linux Kernel Module
 
+This module is posted for educational purposes only.
+
 To test this module, run `make` then `sudo insmod mymodule.ko` to insert it.
 
 Run `sudo dmesg` to see the printk messages.
