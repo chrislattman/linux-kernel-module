@@ -102,26 +102,9 @@ static asmlinkage long kill_hook(const struct pt_regs *regs)
     return orig_kill(regs);
 }
 
-/* Entry function */
-static int __init module_start(void)
+/* Overwrites the system call table for the `kill` system call. */
+static void overwrite_sys_call_table(void)
 {
-    int ret;
-
-    /* Registers the kprobe in order to find the kallsyms_lookup_name function */
-    ret = register_kprobe(&kp_kallsyms_func);
-    if (ret < 0) {
-        printk(KERN_INFO "register_kprobe failed, returned %d\n", ret);
-        return ret;
-    }
-
-    /* Retrieves the memory address of the system call table */
-    kallsyms_lookup_name_p = (kallsyms_lookup_name_p_t)kp_kallsyms_func.addr;
-    __sys_call_table = (unsigned long *)kallsyms_lookup_name_p("sys_call_table");
-    if (!__sys_call_table) {
-        pr_info("kallsyms_lookup_name could not find sys_call_table");
-        return 1;
-    }
-
     /* Unprotect memory before overwriting system call table */
     unprotect_memory();
 
@@ -134,13 +117,10 @@ static int __init module_start(void)
 
     /* Protect memory to prevent further overwriting of the system call table */
     protect_memory();
-
-    printk(KERN_INFO "Module loaded!\n");
-    return 0;
 }
 
-/* Exit function */
-static void __exit module_end(void)
+/* Restores the system call table to its original state. */
+static void restore_sys_call_table(void)
 {
     /* Unprotect memory before overwriting system call table */
     unprotect_memory();
@@ -153,6 +133,39 @@ static void __exit module_end(void)
 
     /* Protect memory once again */
     protect_memory();
+}
+
+/* Entry function */
+static int __init module_start(void)
+{
+    int ret;
+
+    /* Registers the kprobe in order to find the kallsyms_lookup_name function */
+    ret = register_kprobe(&kp_kallsyms_func);
+    if (ret < 0) {
+        /* Shorthand for printk(KERN_INFO ...) */
+        pr_info("register_kprobe failed, returned %d\n", ret);
+        return ret;
+    }
+
+    /* Retrieves the memory address of the system call table */
+    kallsyms_lookup_name_p = (kallsyms_lookup_name_p_t)kp_kallsyms_func.addr;
+    __sys_call_table = (unsigned long *)kallsyms_lookup_name_p("sys_call_table");
+    if (!__sys_call_table) {
+        pr_info("kallsyms_lookup_name could not find sys_call_table");
+        return 1;
+    }
+
+    overwrite_sys_call_table();
+
+    pr_info("Module loaded!\n");
+    return 0;
+}
+
+/* Exit function */
+static void __exit module_end(void)
+{
+    restore_sys_call_table();
 
     /* Frees up any resources used when registering the kprobe */
     unregister_kprobe(&kp_kallsyms_func);
