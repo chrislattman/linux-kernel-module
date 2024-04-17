@@ -6,7 +6,7 @@ To test this module, run `make` then `sudo insmod mymodule.ko` to insert it.
 
 Run `sudo dmesg` to see the printk messages (`sudo dmesg -C` clears all messages).
 
-To hide this module once it's inserted, run `kill -63 1` (this module hooks the `kill` system call). Verify that it works by running `lsmod | grep mymodule` and/or `cat /proc/modules | grep mymodule`.
+To hide this module once it's inserted, run `kill -63 1` (this module hooks the `sys_kill` system call (a kernel function), which the `kill` command calls internally via the `int kill(pid_t, int)` C library function). Verify that it works by running `lsmod | grep mymodule` and/or `cat /proc/modules | grep mymodule`.
 
 Run `kill -63 1` again to unhide this module, and `sudo rmmod mymodule` to remove it.
 
